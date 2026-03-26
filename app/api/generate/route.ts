@@ -30,12 +30,14 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY!,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'mcp-client-2025-11-20',
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
         mcp_servers: [mcpServer],
+        tools: [{ type: 'mcp_toolset', mcp_server_name: 'canva-mcp' }],
       }),
     });
 
