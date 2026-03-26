@@ -50,5 +50,5 @@ export interface CanvaDesignResult {
 
 export interface GenerateResponse {
   copy: string;
-  canvaDesign: CanvaDesignResult | null;
+  canvaEditUrl: string | null;
 }

@@ -9,36 +9,24 @@ function SetupContent() {
   const error     = searchParams.get('error');
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center pt-20 px-4">
-      <div className="w-full max-w-lg space-y-6">
+    <div className="min-h-screen bg-gray-50 flex items-start justify-center pt-16 px-4">
+      <div className="w-full max-w-2xl space-y-6 pb-16">
 
-        {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Canva Setup</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Setup</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Connect your Canva account so the app can create blank designs automatically.
+            Two one-time steps: connect Canva, then connect Canva MCP so Claude can design graphics.
           </p>
         </div>
 
-        {/* Success */}
         {connected && (
           <div className="rounded-xl bg-green-50 border border-green-200 p-5">
-            <p className="font-semibold text-green-800">Canva connected!</p>
+            <p className="font-semibold text-green-800">Canva Connect API authorized!</p>
             <p className="text-sm text-green-700 mt-1">
-              Your Canva account is now linked. Generating an announcement will produce
-              marketing copy <em>and</em> open a ready-to-edit Canva design at the right
-              dimensions for your chosen format.
+              Step 1 is done. Continue to Step 2 below to enable AI graphic generation.
             </p>
-            <a
-              href="/"
-              className="mt-3 inline-block text-sm text-green-800 underline font-medium"
-            >
-              ← Back to auctions
-            </a>
           </div>
         )}
-
-        {/* Error */}
         {error && (
           <div className="rounded-xl bg-red-50 border border-red-200 p-5">
             <p className="font-semibold text-red-800">Authorization failed</p>
@@ -46,54 +34,19 @@ function SetupContent() {
           </div>
         )}
 
-        {/* Step 1 — Canva App credentials */}
+        {/* ── Step 1: Canva Connect API ───────────────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
-              1
-            </span>
-            <h2 className="font-semibold text-gray-900">Set Canva credentials in Vercel</h2>
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">1</span>
+            <h2 className="font-semibold text-gray-900">Authorize Canva Connect API</h2>
           </div>
-          <p className="text-sm text-gray-600 pl-10">
-            In your{' '}
-            <a
-              href="https://www.canva.com/developers/apps"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 underline"
-            >
-              Canva Developer Portal
-            </a>
-            , find your integration and copy the <strong>Client ID</strong> and{' '}
-            <strong>Client Secret</strong>. Add them to your Vercel project as:
-          </p>
-          <ul className="pl-10 text-sm space-y-1 font-mono text-gray-700 list-disc list-inside">
-            <li>CANVA_CLIENT_ID</li>
-            <li>CANVA_CLIENT_SECRET</li>
-          </ul>
-          <p className="text-sm text-gray-600 pl-10">
-            Also confirm <code className="bg-gray-100 px-1 rounded">APP_URL</code> is set to{' '}
-            <code className="bg-gray-100 px-1 rounded">https://auction-canva-promoter.vercel.app</code>{' '}
-            and that your Canva app&apos;s allowed redirect URL includes:{' '}
-            <code className="bg-gray-100 px-1 rounded text-xs">
-              https://auction-canva-promoter.vercel.app/api/auth/canva/callback
-            </code>
-          </p>
-        </div>
 
-        {/* Step 2 — Authorize */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
-              2
-            </span>
-            <h2 className="font-semibold text-gray-900">Authorize with Canva</h2>
-          </div>
           <p className="text-sm text-gray-600 pl-10">
-            Click below to log in with Canva and grant the app permission to create designs
-            on your behalf. You only need to do this once (tokens are stored and rotated
-            automatically).
+            Make sure <code className="bg-gray-100 px-1 rounded">CANVA_CLIENT_ID</code>,{' '}
+            <code className="bg-gray-100 px-1 rounded">CANVA_CLIENT_SECRET</code>, and{' '}
+            <code className="bg-gray-100 px-1 rounded">APP_URL</code> are set in Vercel, then click:
           </p>
+
           <div className="pl-10">
             <a
               href="/api/auth/canva"
@@ -107,30 +60,72 @@ function SetupContent() {
           </div>
         </div>
 
-        {/* Note about automated design generation */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800 space-y-2">
-          <p className="font-semibold">About automated design generation</p>
-          <p>
-            Currently the app generates <strong>marketing copy</strong> with Claude and creates a
-            <strong> blank Canva canvas</strong> at the right dimensions for your chosen format.
-            You paste the copy into the design in Canva.
+        {/* ── Step 2: Canva MCP ───────────────────────────────────────────────── */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+          <div className="flex items-center gap-3">
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">2</span>
+            <h2 className="font-semibold text-gray-900">Connect Canva MCP (enables AI design generation)</h2>
+          </div>
+
+          <p className="text-sm text-gray-600 pl-10">
+            Canva&apos;s MCP server only allows <code className="bg-gray-100 px-1 rounded">localhost</code>{' '}
+            as a redirect URI. You authorize it once from your Mac using{' '}
+            <code className="bg-gray-100 px-1 rounded">mcp-remote</code>, then extract the
+            credentials and paste them into Vercel. This lets the server refresh the token
+            indefinitely.
           </p>
-          <p>
-            Full AI-driven design generation (where Claude lays out the graphic inside Canva) requires
-            the <strong>Canva MCP server</strong>, which needs Canva to allowlist your production domain.
-            Submit the{' '}
-            <a
-              href="https://docs.google.com/forms/d/1jgC4vAA2-5LqaNzVhnP8ygSknF4Vysc1UzAWJukzcp0/viewform"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-medium"
-            >
-              Canva intake form
-            </a>{' '}
-            to request approval (5–7 business days).
-          </p>
+
+          <ol className="pl-10 space-y-4 text-sm text-gray-700">
+            <li>
+              <p className="font-medium text-gray-900">2a — Authenticate (run in Terminal)</p>
+              <pre className="mt-1.5 bg-gray-900 text-green-400 rounded-lg px-4 py-3 text-xs overflow-x-auto leading-relaxed">
+                {`npx mcp-remote@latest https://mcp.canva.com/mcp`}
+              </pre>
+              <p className="mt-1.5 text-gray-500 text-xs">
+                A browser tab opens. Log in with Canva and click Allow. Come back to the terminal
+                and press Ctrl-C once you see a connection message.
+              </p>
+            </li>
+
+            <li>
+              <p className="font-medium text-gray-900">2b — Extract credentials (same Terminal)</p>
+              <pre className="mt-1.5 bg-gray-900 text-green-400 rounded-lg px-4 py-3 text-xs overflow-x-auto leading-relaxed">
+                {`cd /path/to/auction-announcement-generator
+node scripts/extract-mcp-creds.mjs`}
+              </pre>
+              <p className="mt-1.5 text-gray-500 text-xs">
+                This prints three lines like{' '}
+                <code className="bg-gray-100 px-1 rounded">CANVA_MCP_CLIENT_ID=...</code>
+              </p>
+            </li>
+
+            <li>
+              <p className="font-medium text-gray-900">2c — Add to Vercel</p>
+              <p className="mt-1 text-gray-600">
+                In Vercel → Settings → Environment Variables, add all three values:{' '}
+                <code className="bg-gray-100 px-1 rounded">CANVA_MCP_CLIENT_ID</code>,{' '}
+                <code className="bg-gray-100 px-1 rounded">CANVA_MCP_CLIENT_SECRET</code>, and{' '}
+                <code className="bg-gray-100 px-1 rounded">CANVA_MCP_REFRESH_TOKEN</code>.
+                Then redeploy.
+              </p>
+            </li>
+          </ol>
+
+          <div className="pl-10 bg-blue-50 rounded-lg p-4 text-sm text-blue-800 space-y-1">
+            <p className="font-medium">How it works after setup</p>
+            <p>
+              The app refreshes the Canva MCP access token automatically on each generate
+              request using the stored refresh token. You only run the mcp-remote step once —
+              unless the refresh token is invalidated (e.g. you revoke access in Canva).
+            </p>
+          </div>
         </div>
 
+        <div className="text-center">
+          <a href="/" className="text-sm text-gray-500 hover:text-gray-800 underline">
+            ← Back to auctions
+          </a>
+        </div>
       </div>
     </div>
   );

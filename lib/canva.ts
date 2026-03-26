@@ -104,6 +104,68 @@ export async function getCanvaAccessToken(): Promise<string> {
   return data.access_token as string;
 }
 
+// ─── Canva MCP OAuth (separate from Connect API) ─────────────────────────────
+
+const MCP_TOKEN_URL = 'https://mcp.canva.com/token';
+const KEY_MCP_REFRESH = 'canva_mcp_refresh_token';
+
+/**
+ * Exchanges the stored Canva MCP refresh token for a fresh access token.
+ * Credentials come from env vars populated by scripts/extract-mcp-creds.mjs.
+ * Rotates the refresh token in Redis after each successful exchange.
+ */
+export async function getCanvaMcpAccessToken(): Promise<string> {
+  const clientId     = process.env.CANVA_MCP_CLIENT_ID;
+  const clientSecret = process.env.CANVA_MCP_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'CANVA_MCP_CLIENT_ID and CANVA_MCP_CLIENT_SECRET are not set. ' +
+        'Run scripts/extract-mcp-creds.mjs and add the values to Vercel.'
+    );
+  }
+
+  const redis = getRedis();
+  let refreshToken: string | null = null;
+  if (redis) refreshToken = await redis.get<string>(KEY_MCP_REFRESH);
+  if (!refreshToken) refreshToken = process.env.CANVA_MCP_REFRESH_TOKEN ?? null;
+  if (!refreshToken) {
+    throw new Error(
+      'CANVA_MCP_REFRESH_TOKEN is not set. ' +
+        'Run scripts/extract-mcp-creds.mjs and add the value to Vercel.'
+    );
+  }
+
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const res = await fetch(MCP_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${credentials}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Canva MCP token refresh failed: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  if (!data.access_token) {
+    throw new Error(`Canva MCP token refresh returned no access_token: ${JSON.stringify(data)}`);
+  }
+
+  if (data.refresh_token && redis) {
+    await redis.set(KEY_MCP_REFRESH, data.refresh_token);
+  }
+
+  return data.access_token as string;
+}
+
+// ─── Connect API design types ─────────────────────────────────────────────────
+
 export interface CanvaDesignResult {
   edit_url: string;
   view_url: string;

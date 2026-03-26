@@ -435,40 +435,35 @@ export default function AuctionDetailPage() {
             )}
 
             {/* Canva Design */}
-            {result.canvaDesign && (
+            {result.canvaEditUrl ? (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h4 className="font-semibold text-gray-900 text-sm mb-1">Canva Design Ready</h4>
+                <h4 className="font-semibold text-gray-900 text-sm mb-1">Canva Design Created</h4>
                 <p className="text-xs text-gray-500 mb-4">
-                  A blank canvas has been created in your Canva account at the right dimensions.
-                  Paste the copy above into the design to finish it.
+                  Claude designed this graphic in your Canva account using the details above.
+                  Click to open and make any final tweaks.
                 </p>
                 <a
-                  href={result.canvaDesign.edit_url}
+                  href={result.canvaEditUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#7D2AE8] hover:bg-[#6a24c7] text-white text-sm font-semibold rounded-lg transition-colors"
                 >
-                  Open in Canva
+                  Open design in Canva
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
                 </a>
               </div>
-            )}
-
-            {/* Canva not connected note */}
-            {!result.canvaDesign && result.copy && (
+            ) : result.copy ? (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
                 <p className="font-medium">Canva design not created</p>
                 <p className="mt-1 text-amber-700">
-                  Canva may not be connected. Visit{' '}
-                  <a href="/setup" className="underline font-medium">
-                    /setup
-                  </a>{' '}
-                  to authorize Canva, then try again.
+                  The Canva MCP credentials may not be configured yet. Visit{' '}
+                  <a href="/setup" className="underline font-medium">/setup</a>{' '}
+                  for instructions, then try again.
                 </p>
               </div>
-            )}
+            ) : null}
 
           </div>
         )}
