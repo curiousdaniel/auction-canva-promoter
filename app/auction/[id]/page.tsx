@@ -60,7 +60,17 @@ export default function AuctionDetailPage() {
         ? auctionData.auctions[0]
         : auctionData.auction || auctionData;
 
-      const itemList: Item[] = itemsData.items || [];
+      // API nests items under data.items; normalize field names to match our types
+      const rawItems: Record<string, unknown>[] =
+        itemsData.data?.items || itemsData.items || [];
+      const itemList: Item[] = rawItems.map((i) => ({
+        ...(i as Item),
+        id: Number(i.id),
+        starting_bid: Number(i.starting_bid ?? i.minimum_bid ?? 0),
+        featured: Number(i.featured ?? 0),
+        quantity: Number(i.quantity ?? 1),
+        reserve_price: Number(i.reserve_price ?? 0),
+      }));
 
       setAuction(auctionObj);
       setItems(itemList);
