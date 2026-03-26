@@ -3,8 +3,18 @@ import { Redis } from '@upstash/redis';
 const KV_KEY = 'canva_refresh_token';
 
 function getRedis(): Redis | null {
+  // Support both Upstash-native env var names and Vercel's KV_REST_API_* names
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ||
+    process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.KV_REST_API_TOKEN;
+
+  if (!url || !token) return null;
+
   try {
-    return Redis.fromEnv();
+    return new Redis({ url, token });
   } catch {
     return null;
   }
