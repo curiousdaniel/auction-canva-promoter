@@ -1,26 +1,30 @@
 import { Redis } from '@upstash/redis';
 
-// Redis keys
-const KEY_CLIENT_ID = 'canva_mcp_client_id';
-const KEY_CLIENT_SECRET = 'canva_mcp_client_secret';
-const KEY_REFRESH_TOKEN = 'canva_mcp_refresh_token';
+// Uses the Canva Connect API (not the MCP server)
+const CONNECT_TOKEN_URL = 'https://api.canva.com/rest/v1/oauth/token';
+const CONNECT_DESIGNS_URL = 'https://api.canva.com/rest/v1/designs';
+const CONNECT_AUTHORIZE_URL = 'https://www.canva.com/api/oauth/authorize';
 
-// Canva MCP-specific OAuth endpoints (separate from the Connect API)
-const MCP_REGISTER_URL = 'https://mcp.canva.com/register';
-const MCP_TOKEN_URL = 'https://mcp.canva.com/token';
+export { CONNECT_AUTHORIZE_URL };
 
-export const MCP_AUTHORIZE_URL = 'https://mcp.canva.com/authorize';
+// Redis key for the rotating Connect API refresh token
+const KEY_REFRESH_TOKEN = 'canva_refresh_token';
+
+// Pixel dimensions for each design type (must be between 40–8000)
+const DESIGN_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  instagram_post: { width: 1080, height: 1080 },
+  facebook_post:  { width: 1200, height: 628 },
+  twitter_post:   { width: 1600, height: 900 },
+  your_story:     { width: 1080, height: 1920 },
+  flyer:          { width: 794,  height: 1123 },
+  poster:         { width: 1414, height: 2000 },
+  facebook_cover: { width: 820,  height: 312 },
+};
 
 function getRedis(): Redis | null {
-  const url =
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.KV_REST_API_URL;
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.KV_REST_API_TOKEN;
-
+  const url   = process.env.UPSTASH_REDIS_REST_URL  || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   if (!url || !token) return null;
-
   try {
     return new Redis({ url, token });
   } catch {
@@ -28,70 +32,19 @@ function getRedis(): Redis | null {
   }
 }
 
-/**
- * Returns the stored MCP client credentials (client_id + client_secret).
- * These come from a one-time Dynamic Client Registration call to mcp.canva.com/register.
- */
-export async function getMcpClientCredentials(): Promise<{
-  clientId: string;
-  clientSecret: string;
-}> {
-  const redis = getRedis();
-  if (redis) {
-    const [clientId, clientSecret] = await Promise.all([
-      redis.get<string>(KEY_CLIENT_ID),
-      redis.get<string>(KEY_CLIENT_SECRET),
-    ]);
-    if (clientId && clientSecret) return { clientId, clientSecret };
-  }
-  throw new Error(
-    'Canva MCP client not registered. Visit /setup to connect Canva.'
-  );
-}
-
-/**
- * Registers this app with the Canva MCP server via Dynamic Client Registration.
- * Stores the resulting client_id and client_secret in Redis.
- * Only needs to run once.
- */
-export async function registerMcpClient(
-  redirectUri: string
-): Promise<{ clientId: string; clientSecret: string }> {
-  const res = await fetch(MCP_REGISTER_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_name: 'Auction Announcement Generator',
-      redirect_uris: [redirectUri],
-      grant_types: ['authorization_code'],
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Canva MCP registration failed: ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const clientId: string = data.client_id;
-  const clientSecret: string = data.client_secret;
-
+function getConnectCredentials(): { clientId: string; clientSecret: string } {
+  const clientId     = process.env.CANVA_CLIENT_ID;
+  const clientSecret = process.env.CANVA_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    throw new Error(`Canva MCP registration returned incomplete credentials: ${JSON.stringify(data)}`);
+    throw new Error(
+      'CANVA_CLIENT_ID and CANVA_CLIENT_SECRET must be set. Visit /setup for instructions.'
+    );
   }
-
-  const redis = getRedis();
-  if (redis) {
-    await Promise.all([
-      redis.set(KEY_CLIENT_ID, clientId),
-      redis.set(KEY_CLIENT_SECRET, clientSecret),
-    ]);
-  }
-
   return { clientId, clientSecret };
 }
 
 /**
- * Saves the initial refresh token to Redis after the OAuth callback.
+ * Stores a fresh refresh token in Redis after the OAuth callback.
  */
 export async function saveInitialRefreshToken(token: string): Promise<void> {
   const redis = getRedis();
@@ -103,8 +56,8 @@ export async function saveInitialRefreshToken(token: string): Promise<void> {
 }
 
 /**
- * Exchanges the stored refresh token for a fresh access token via the Canva MCP OAuth server.
- * Automatically rotates and saves the new refresh token.
+ * Exchanges the stored refresh token for a fresh Canva Connect API access token.
+ * Automatically rotates and saves the new refresh token Canva returns.
  */
 export async function getCanvaAccessToken(): Promise<string> {
   const redis = getRedis();
@@ -114,19 +67,16 @@ export async function getCanvaAccessToken(): Promise<string> {
     refreshToken = await redis.get<string>(KEY_REFRESH_TOKEN);
   }
   if (!refreshToken) {
-    // Fall back to env var (for first run before /setup is used)
     refreshToken = process.env.CANVA_REFRESH_TOKEN || null;
   }
   if (!refreshToken) {
-    throw new Error(
-      'Canva is not connected. Visit /setup to authorize Canva.'
-    );
+    throw new Error('Canva is not connected. Visit /setup to authorize Canva.');
   }
 
-  const { clientId, clientSecret } = await getMcpClientCredentials();
+  const { clientId, clientSecret } = getConnectCredentials();
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
-  const res = await fetch(MCP_TOKEN_URL, {
+  const res = await fetch(CONNECT_TOKEN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -139,20 +89,66 @@ export async function getCanvaAccessToken(): Promise<string> {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Failed to refresh Canva MCP token: ${err}`);
+    throw new Error(`Failed to refresh Canva token: ${await res.text()}`);
   }
 
   const data = await res.json();
-
   if (!data.access_token) {
     throw new Error(`Canva token refresh returned no access_token: ${JSON.stringify(data)}`);
   }
 
-  // Rotate: persist the new refresh token
   if (data.refresh_token && redis) {
     await redis.set(KEY_REFRESH_TOKEN, data.refresh_token);
   }
 
   return data.access_token as string;
+}
+
+export interface CanvaDesignResult {
+  edit_url: string;
+  view_url: string;
+  design_id: string;
+  title: string;
+}
+
+/**
+ * Creates a blank Canva design of the right dimensions for the given design type.
+ * Returns the direct edit URL (valid 30 days).
+ */
+export async function createCanvaDesign(
+  accessToken: string,
+  designType: string,
+  title: string
+): Promise<CanvaDesignResult> {
+  const dims = DESIGN_DIMENSIONS[designType] ?? { width: 1080, height: 1080 };
+
+  const res = await fetch(CONNECT_DESIGNS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      design_type: {
+        type: 'custom',
+        width: dims.width,
+        height: dims.height,
+      },
+      title: title.slice(0, 255),
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Canva design creation failed: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const design = data.design;
+
+  return {
+    edit_url:  design.urls.edit_url,
+    view_url:  design.urls.view_url,
+    design_id: design.id,
+    title:     design.title,
+  };
 }

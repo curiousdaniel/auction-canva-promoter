@@ -41,17 +41,14 @@ export interface GenerateRequest {
   designType: string;
 }
 
-export interface GenerateResponse {
-  copy: string;
-  designs: DesignResult[];
-  toolCalls: { name: string; input: Record<string, unknown> }[];
+export interface CanvaDesignResult {
+  edit_url: string;
+  view_url: string;
+  design_id: string;
+  title: string;
 }
 
-export interface DesignResult {
-  url?: string;
-  thumbnail?: string;
-  title?: string;
-  edit_url?: string;
-  raw?: string;
-  [key: string]: unknown;
+export interface GenerateResponse {
+  copy: string;
+  canvaDesign: CanvaDesignResult | null;
 }

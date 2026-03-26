@@ -434,61 +434,42 @@ export default function AuctionDetailPage() {
               </div>
             )}
 
-            {/* Design Candidates */}
-            {result.designs && result.designs.length > 0 && (
+            {/* Canva Design */}
+            {result.canvaDesign && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h4 className="font-semibold text-gray-900 text-sm mb-4">
-                  Canva Designs ({result.designs.length})
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {result.designs.map((design, i) => (
-                    <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
-                      {design.thumbnail && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={design.thumbnail}
-                          alt={design.title || `Design ${i + 1}`}
-                          className="w-full aspect-square object-cover bg-gray-100"
-                        />
-                      )}
-                      <div className="p-3">
-                        <p className="text-sm font-medium text-gray-900 mb-2">
-                          {design.title || `Design ${i + 1}`}
-                        </p>
-                        {(design.edit_url || design.url) && (
-                          <a
-                            href={(design.edit_url || design.url) as string}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium"
-                          >
-                            Open in Canva
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </a>
-                        )}
-                        {design.raw && !design.url && !design.edit_url && (
-                          <p className="text-xs text-gray-500 break-all">{design.raw.slice(0, 200)}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <h4 className="font-semibold text-gray-900 text-sm mb-1">Canva Design Ready</h4>
+                <p className="text-xs text-gray-500 mb-4">
+                  A blank canvas has been created in your Canva account at the right dimensions.
+                  Paste the copy above into the design to finish it.
+                </p>
+                <a
+                  href={result.canvaDesign.edit_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#7D2AE8] hover:bg-[#6a24c7] text-white text-sm font-semibold rounded-lg transition-colors"
+                >
+                  Open in Canva
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
               </div>
             )}
 
-            {/* Tool calls debug info (collapsible) */}
-            {result.toolCalls && result.toolCalls.length > 0 && (
-              <details className="bg-gray-50 rounded-xl border border-gray-200 p-4">
-                <summary className="text-xs font-medium text-gray-500 cursor-pointer select-none">
-                  Canva tool calls ({result.toolCalls.length})
-                </summary>
-                <pre className="mt-3 text-xs text-gray-600 overflow-x-auto">
-                  {JSON.stringify(result.toolCalls, null, 2)}
-                </pre>
-              </details>
+            {/* Canva not connected note */}
+            {!result.canvaDesign && result.copy && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                <p className="font-medium">Canva design not created</p>
+                <p className="mt-1 text-amber-700">
+                  Canva may not be connected. Visit{' '}
+                  <a href="/setup" className="underline font-medium">
+                    /setup
+                  </a>{' '}
+                  to authorize Canva, then try again.
+                </p>
+              </div>
             )}
+
           </div>
         )}
       </main>
