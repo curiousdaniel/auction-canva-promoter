@@ -64,7 +64,7 @@ export default function AuctionDetailPage() {
       const rawItems: Record<string, unknown>[] =
         itemsData.data?.items || itemsData.items || [];
       const itemList: Item[] = rawItems.map((i) => ({
-        ...(i as Item),
+        ...(i as unknown as Item),
         id: Number(i.id),
         starting_bid: Number(i.starting_bid ?? i.minimum_bid ?? 0),
         featured: Number(i.featured ?? 0),
