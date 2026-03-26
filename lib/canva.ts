@@ -1,9 +1,17 @@
 import { Redis } from '@upstash/redis';
 
-const KV_KEY = 'canva_refresh_token';
+// Redis keys
+const KEY_CLIENT_ID = 'canva_mcp_client_id';
+const KEY_CLIENT_SECRET = 'canva_mcp_client_secret';
+const KEY_REFRESH_TOKEN = 'canva_mcp_refresh_token';
+
+// Canva MCP-specific OAuth endpoints (separate from the Connect API)
+const MCP_REGISTER_URL = 'https://mcp.canva.com/register';
+const MCP_TOKEN_URL = 'https://mcp.canva.com/token';
+
+export const MCP_AUTHORIZE_URL = 'https://mcp.canva.com/authorize';
 
 function getRedis(): Redis | null {
-  // Support both Upstash-native env var names and Vercel's KV_REST_API_* names
   const url =
     process.env.UPSTASH_REDIS_REST_URL ||
     process.env.KV_REST_API_URL;
@@ -21,61 +29,104 @@ function getRedis(): Redis | null {
 }
 
 /**
- * Reads the current refresh token — Redis first, env var as fallback.
+ * Returns the stored MCP client credentials (client_id + client_secret).
+ * These come from a one-time Dynamic Client Registration call to mcp.canva.com/register.
  */
-async function getStoredRefreshToken(): Promise<string> {
-  try {
-    const redis = getRedis();
-    if (redis) {
-      const stored = await redis.get<string>(KV_KEY);
-      if (stored) return stored;
-    }
-  } catch {
-    // Redis not available (e.g. local dev without env vars)
+export async function getMcpClientCredentials(): Promise<{
+  clientId: string;
+  clientSecret: string;
+}> {
+  const redis = getRedis();
+  if (redis) {
+    const [clientId, clientSecret] = await Promise.all([
+      redis.get<string>(KEY_CLIENT_ID),
+      redis.get<string>(KEY_CLIENT_SECRET),
+    ]);
+    if (clientId && clientSecret) return { clientId, clientSecret };
   }
-
-  const envToken = process.env.CANVA_REFRESH_TOKEN;
-  if (envToken) return envToken;
-
   throw new Error(
-    'Canva is not connected. Visit /setup to authorize Canva.'
+    'Canva MCP client not registered. Visit /setup to connect Canva.'
   );
 }
 
 /**
- * Persists a new refresh token to KV (Canva issues a new one on every exchange).
+ * Registers this app with the Canva MCP server via Dynamic Client Registration.
+ * Stores the resulting client_id and client_secret in Redis.
+ * Only needs to run once.
  */
-async function storeRefreshToken(token: string): Promise<void> {
-  try {
-    const redis = getRedis();
-    if (redis) {
-      await redis.set(KV_KEY, token);
-    } else {
-      console.warn('Canva: Redis not available, could not persist new refresh token');
-    }
-  } catch {
-    console.warn('Canva: could not persist new refresh token to Redis');
+export async function registerMcpClient(
+  redirectUri: string
+): Promise<{ clientId: string; clientSecret: string }> {
+  const res = await fetch(MCP_REGISTER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_name: 'Auction Announcement Generator',
+      redirect_uris: [redirectUri],
+      grant_types: ['authorization_code'],
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Canva MCP registration failed: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  const clientId: string = data.client_id;
+  const clientSecret: string = data.client_secret;
+
+  if (!clientId || !clientSecret) {
+    throw new Error(`Canva MCP registration returned incomplete credentials: ${JSON.stringify(data)}`);
+  }
+
+  const redis = getRedis();
+  if (redis) {
+    await Promise.all([
+      redis.set(KEY_CLIENT_ID, clientId),
+      redis.set(KEY_CLIENT_SECRET, clientSecret),
+    ]);
+  }
+
+  return { clientId, clientSecret };
+}
+
+/**
+ * Saves the initial refresh token to Redis after the OAuth callback.
+ */
+export async function saveInitialRefreshToken(token: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    await redis.set(KEY_REFRESH_TOKEN, token);
+  } else {
+    console.warn('Canva: Redis not available, could not persist refresh token');
   }
 }
 
 /**
- * Exchanges the stored refresh token for a fresh Canva access token,
- * then saves the new refresh token that Canva returns.
+ * Exchanges the stored refresh token for a fresh access token via the Canva MCP OAuth server.
+ * Automatically rotates and saves the new refresh token.
  */
 export async function getCanvaAccessToken(): Promise<string> {
-  const clientId = process.env.CANVA_CLIENT_ID;
-  const clientSecret = process.env.CANVA_CLIENT_SECRET;
+  const redis = getRedis();
 
-  if (!clientId || !clientSecret) {
+  let refreshToken: string | null = null;
+  if (redis) {
+    refreshToken = await redis.get<string>(KEY_REFRESH_TOKEN);
+  }
+  if (!refreshToken) {
+    // Fall back to env var (for first run before /setup is used)
+    refreshToken = process.env.CANVA_REFRESH_TOKEN || null;
+  }
+  if (!refreshToken) {
     throw new Error(
-      'CANVA_CLIENT_ID and CANVA_CLIENT_SECRET must be set in environment variables.'
+      'Canva is not connected. Visit /setup to authorize Canva.'
     );
   }
 
-  const refreshToken = await getStoredRefreshToken();
+  const { clientId, clientSecret } = await getMcpClientCredentials();
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
-  const res = await fetch('https://api.canva.com/rest/v1/oauth/token', {
+  const res = await fetch(MCP_TOKEN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -89,7 +140,7 @@ export async function getCanvaAccessToken(): Promise<string> {
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Failed to refresh Canva token: ${err}`);
+    throw new Error(`Failed to refresh Canva MCP token: ${err}`);
   }
 
   const data = await res.json();
@@ -98,17 +149,10 @@ export async function getCanvaAccessToken(): Promise<string> {
     throw new Error(`Canva token refresh returned no access_token: ${JSON.stringify(data)}`);
   }
 
-  // Canva rotates the refresh token on every exchange — persist the new one
-  if (data.refresh_token) {
-    await storeRefreshToken(data.refresh_token);
+  // Rotate: persist the new refresh token
+  if (data.refresh_token && redis) {
+    await redis.set(KEY_REFRESH_TOKEN, data.refresh_token);
   }
 
   return data.access_token as string;
-}
-
-/**
- * Stores a brand-new refresh token (called from the OAuth callback after first authorization).
- */
-export async function saveInitialRefreshToken(token: string): Promise<void> {
-  await storeRefreshToken(token);
 }

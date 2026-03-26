@@ -72,19 +72,15 @@ function SetupContent() {
               </p>
 
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
-                <p className="font-semibold mb-1">Before you click — verify these are set in Vercel:</p>
+                <p className="font-semibold mb-1">Only one thing needed before you click:</p>
                 <ul className="list-disc list-inside space-y-0.5 text-amber-700">
-                  <li><code className="font-mono">CANVA_CLIENT_ID</code></li>
-                  <li><code className="font-mono">CANVA_CLIENT_SECRET</code></li>
                   <li>
-                    <code className="font-mono">APP_URL</code> — e.g.{' '}
+                    <code className="font-mono">APP_URL</code> must be set in Vercel — e.g.{' '}
                     <code className="font-mono">https://auction-canva-promoter.vercel.app</code>
                   </li>
                 </ul>
-                <p className="mt-2">
-                  Also make sure{' '}
-                  <code className="font-mono text-xs">APP_URL/api/auth/canva/callback</code> is
-                  registered as a redirect URI in your Canva Developer Portal app.
+                <p className="mt-2 text-amber-700">
+                  No Canva developer account or app registration needed — the app handles that automatically.
                 </p>
               </div>
 
@@ -101,26 +97,12 @@ function SetupContent() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="font-semibold text-gray-900 mb-3 text-sm">
-                Where to get your Canva credentials
-              </h3>
+              <h3 className="font-semibold text-gray-900 mb-3 text-sm">How it works</h3>
               <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
-                <li>
-                  Go to the{' '}
-                  <a href="https://www.canva.com/developers/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                    Canva Developer Portal
-                  </a>.
-                </li>
-                <li>Create or open an integration under <strong>Canva Connect</strong>.</li>
-                <li>Copy the <strong>Client ID</strong> → save as <code className="font-mono bg-gray-100 px-1 rounded">CANVA_CLIENT_ID</code>.</li>
-                <li>Generate a <strong>Client Secret</strong> → save as <code className="font-mono bg-gray-100 px-1 rounded">CANVA_CLIENT_SECRET</code>.</li>
-                <li>
-                  Under <strong>Authentication → Redirect URLs</strong>, add:{' '}
-                  <code className="font-mono bg-gray-100 px-1 rounded text-xs">
-                    https://auction-canva-promoter.vercel.app/api/auth/canva/callback
-                  </code>
-                </li>
-                <li>Set <code className="font-mono bg-gray-100 px-1 rounded">APP_URL</code> in Vercel to your deployment URL.</li>
+                <li>Clicking the button registers this app with Canva automatically.</li>
+                <li>You&apos;ll be redirected to Canva to approve access with your account.</li>
+                <li>After approval, your credentials are saved securely and rotate automatically.</li>
+                <li>You won&apos;t need to do this again unless you revoke access in Canva.</li>
               </ol>
             </div>
           </>

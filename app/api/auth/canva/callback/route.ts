@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveInitialRefreshToken } from '@/lib/canva';
+import { getMcpClientCredentials, saveInitialRefreshToken } from '@/lib/canva';
+
+const MCP_TOKEN_URL = 'https://mcp.canva.com/token';
 
 /**
- * Canva OAuth callback.
- * Receives the authorization code, validates state, exchanges for tokens,
- * then redirects to /setup with the refresh token displayed.
+ * Canva MCP OAuth callback.
+ * Exchanges the authorization code for MCP tokens and stores the refresh token in Redis.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -33,14 +34,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/setup?error=no_verifier', request.url));
   }
 
-  const clientId = process.env.CANVA_CLIENT_ID!;
-  const clientSecret = process.env.CANVA_CLIENT_SECRET!;
   const appUrl = process.env.APP_URL!;
   const redirectUri = `${appUrl}/api/auth/canva/callback`;
 
+  let clientId: string;
+  let clientSecret: string;
+  try {
+    ({ clientId, clientSecret } = await getMcpClientCredentials());
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.redirect(
+      new URL(`/setup?error=${encodeURIComponent(`no_client_credentials: ${msg}`)}`, request.url)
+    );
+  }
+
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
-  const tokenRes = await fetch('https://api.canva.com/rest/v1/oauth/token', {
+  const tokenRes = await fetch(MCP_TOKEN_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -57,7 +67,10 @@ export async function GET(request: NextRequest) {
   if (!tokenRes.ok) {
     const errText = await tokenRes.text();
     return NextResponse.redirect(
-      new URL(`/setup?error=${encodeURIComponent(`token_exchange_failed: ${errText}`)}`, request.url)
+      new URL(
+        `/setup?error=${encodeURIComponent(`token_exchange_failed: ${errText}`)}`,
+        request.url
+      )
     );
   }
 
@@ -65,18 +78,12 @@ export async function GET(request: NextRequest) {
   const refreshToken: string = tokens.refresh_token;
 
   if (!refreshToken) {
-    return NextResponse.redirect(
-      new URL('/setup?error=no_refresh_token', request.url)
-    );
+    return NextResponse.redirect(new URL('/setup?error=no_refresh_token', request.url));
   }
 
-  // Persist the refresh token to KV so it rotates automatically on every use
   await saveInitialRefreshToken(refreshToken);
 
-  // Also pass it to the setup page for display (user confirmation)
-  const response = NextResponse.redirect(
-    new URL(`/setup?connected=true`, request.url)
-  );
+  const response = NextResponse.redirect(new URL('/setup?connected=true', request.url));
   response.cookies.delete('canva_code_verifier');
   response.cookies.delete('canva_state');
 
