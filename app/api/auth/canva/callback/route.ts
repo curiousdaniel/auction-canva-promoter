@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { saveInitialRefreshToken } from '@/lib/canva';
 
 /**
  * Canva OAuth callback.
@@ -69,9 +70,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Clear the PKCE cookies and pass the refresh token to the setup page
+  // Persist the refresh token to KV so it rotates automatically on every use
+  await saveInitialRefreshToken(refreshToken);
+
+  // Also pass it to the setup page for display (user confirmation)
   const response = NextResponse.redirect(
-    new URL(`/setup?refresh_token=${encodeURIComponent(refreshToken)}`, request.url)
+    new URL(`/setup?connected=true`, request.url)
   );
   response.cookies.delete('canva_code_verifier');
   response.cookies.delete('canva_state');

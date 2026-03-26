@@ -1,21 +1,13 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useState, Suspense } from 'react';
+import { Suspense } from 'react';
 import Link from 'next/link';
 
 function SetupContent() {
   const searchParams = useSearchParams();
-  const refreshToken = searchParams.get('refresh_token');
+  const connected = searchParams.get('connected') === 'true';
   const error = searchParams.get('error');
-  const [copied, setCopied] = useState(false);
-
-  async function copyToken() {
-    if (!refreshToken) return;
-    await navigator.clipboard.writeText(refreshToken);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -34,21 +26,18 @@ function SetupContent() {
       <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
 
         {/* Error state */}
-        {error && !refreshToken && (
+        {error && !connected && (
           <div className="rounded-xl bg-red-50 border border-red-200 p-5">
             <p className="font-semibold text-red-700 mb-1">Authorization failed</p>
             <p className="text-sm text-red-600 font-mono break-all">{decodeURIComponent(error)}</p>
-            <a
-              href="/api/auth/canva"
-              className="mt-4 inline-block text-sm text-red-700 underline"
-            >
+            <a href="/api/auth/canva" className="mt-4 inline-block text-sm text-red-700 underline">
               Try again
             </a>
           </div>
         )}
 
-        {/* Success: show refresh token */}
-        {refreshToken && (
+        {/* Success */}
+        {connected && (
           <div className="rounded-xl bg-green-50 border border-green-200 p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 flex-shrink-0 w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
@@ -57,71 +46,29 @@ function SetupContent() {
                 </svg>
               </div>
               <div>
-                <p className="font-semibold text-green-800">Canva authorized successfully!</p>
+                <p className="font-semibold text-green-800">Canva connected successfully!</p>
                 <p className="text-sm text-green-700 mt-1">
-                  Copy the refresh token below and add it to your Vercel environment variables as{' '}
-                  <code className="font-mono bg-green-100 px-1 rounded">CANVA_REFRESH_TOKEN</code>.
+                  Your refresh token has been saved automatically. The app will keep it up to date — you don&apos;t need to do anything else.
                 </p>
               </div>
             </div>
-
-            <div className="bg-white rounded-lg border border-green-200 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                  CANVA_REFRESH_TOKEN
-                </span>
-                <button
-                  onClick={copyToken}
-                  className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  {copied ? (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                      Copy
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="font-mono text-sm text-gray-800 break-all select-all">{refreshToken}</p>
-            </div>
-
-            <div className="bg-white rounded-lg border border-green-200 p-4 space-y-2 text-sm text-gray-700">
-              <p className="font-medium text-gray-900">Next steps:</p>
-              <ol className="list-decimal list-inside space-y-1.5 text-gray-600">
-                <li>Copy the token above.</li>
-                <li>
-                  Go to your Vercel project →{' '}
-                  <span className="font-medium">Settings → Environment Variables</span>.
-                </li>
-                <li>
-                  Add a new variable named{' '}
-                  <code className="font-mono bg-gray-100 px-1 rounded">CANVA_REFRESH_TOKEN</code>{' '}
-                  with the copied value.
-                </li>
-                <li>Redeploy the project for the change to take effect.</li>
-              </ol>
-            </div>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-green-300 text-green-800 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors"
+            >
+              ← Go generate announcements
+            </Link>
           </div>
         )}
 
         {/* Default: not yet connected */}
-        {!refreshToken && !error && (
+        {!connected && !error && (
           <>
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
               <h2 className="font-semibold text-gray-900">Connect your Canva account</h2>
               <p className="text-sm text-gray-600 leading-relaxed">
                 This app uses Canva to generate announcement graphics. You only need to do this
-                once. After connecting, you&apos;ll get a <strong>refresh token</strong> to save in
-                your Vercel environment variables.
+                once. Your credentials will be stored securely and refreshed automatically.
               </p>
 
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
@@ -130,14 +77,14 @@ function SetupContent() {
                   <li><code className="font-mono">CANVA_CLIENT_ID</code></li>
                   <li><code className="font-mono">CANVA_CLIENT_SECRET</code></li>
                   <li>
-                    <code className="font-mono">APP_URL</code> — your full Vercel URL, e.g.{' '}
-                    <code className="font-mono">https://your-app.vercel.app</code>
+                    <code className="font-mono">APP_URL</code> — e.g.{' '}
+                    <code className="font-mono">https://auction-canva-promoter.vercel.app</code>
                   </li>
                 </ul>
                 <p className="mt-2">
                   Also make sure{' '}
-                  <code className="font-mono">APP_URL/api/auth/canva/callback</code> is registered
-                  as a redirect URI in your Canva Developer Portal app.
+                  <code className="font-mono text-xs">APP_URL/api/auth/canva/callback</code> is
+                  registered as a redirect URI in your Canva Developer Portal app.
                 </p>
               </div>
 
@@ -160,38 +107,20 @@ function SetupContent() {
               <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
                 <li>
                   Go to the{' '}
-                  <a
-                    href="https://www.canva.com/developers/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
+                  <a href="https://www.canva.com/developers/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                     Canva Developer Portal
-                  </a>
-                  .
+                  </a>.
                 </li>
-                <li>
-                  Create a new integration (or open an existing one) under{' '}
-                  <strong>Canva Connect</strong>.
-                </li>
-                <li>
-                  Copy the <strong>Client ID</strong> → save as{' '}
-                  <code className="font-mono bg-gray-100 px-1 rounded">CANVA_CLIENT_ID</code>.
-                </li>
-                <li>
-                  Generate a <strong>Client Secret</strong> → save as{' '}
-                  <code className="font-mono bg-gray-100 px-1 rounded">CANVA_CLIENT_SECRET</code>.
-                </li>
+                <li>Create or open an integration under <strong>Canva Connect</strong>.</li>
+                <li>Copy the <strong>Client ID</strong> → save as <code className="font-mono bg-gray-100 px-1 rounded">CANVA_CLIENT_ID</code>.</li>
+                <li>Generate a <strong>Client Secret</strong> → save as <code className="font-mono bg-gray-100 px-1 rounded">CANVA_CLIENT_SECRET</code>.</li>
                 <li>
                   Under <strong>Authentication → Redirect URLs</strong>, add:{' '}
                   <code className="font-mono bg-gray-100 px-1 rounded text-xs">
-                    https://your-app.vercel.app/api/auth/canva/callback
+                    https://auction-canva-promoter.vercel.app/api/auth/canva/callback
                   </code>
                 </li>
-                <li>
-                  Set <code className="font-mono bg-gray-100 px-1 rounded">APP_URL</code> in
-                  Vercel to your deployment URL.
-                </li>
+                <li>Set <code className="font-mono bg-gray-100 px-1 rounded">APP_URL</code> in Vercel to your deployment URL.</li>
               </ol>
             </div>
           </>
