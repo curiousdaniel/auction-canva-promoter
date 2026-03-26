@@ -1,16 +1,27 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
 const KV_KEY = 'canva_refresh_token';
 
+function getRedis(): Redis | null {
+  try {
+    return Redis.fromEnv();
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Reads the current refresh token — KV first, env var as fallback.
+ * Reads the current refresh token — Redis first, env var as fallback.
  */
 async function getStoredRefreshToken(): Promise<string> {
   try {
-    const stored = await kv.get<string>(KV_KEY);
-    if (stored) return stored;
+    const redis = getRedis();
+    if (redis) {
+      const stored = await redis.get<string>(KV_KEY);
+      if (stored) return stored;
+    }
   } catch {
-    // KV not available (e.g. local dev without KV env vars)
+    // Redis not available (e.g. local dev without env vars)
   }
 
   const envToken = process.env.CANVA_REFRESH_TOKEN;
@@ -26,10 +37,14 @@ async function getStoredRefreshToken(): Promise<string> {
  */
 async function storeRefreshToken(token: string): Promise<void> {
   try {
-    await kv.set(KV_KEY, token);
+    const redis = getRedis();
+    if (redis) {
+      await redis.set(KV_KEY, token);
+    } else {
+      console.warn('Canva: Redis not available, could not persist new refresh token');
+    }
   } catch {
-    // KV not available — token will be lost, next request will fail
-    console.warn('Canva: could not persist new refresh token to KV');
+    console.warn('Canva: could not persist new refresh token to Redis');
   }
 }
 
