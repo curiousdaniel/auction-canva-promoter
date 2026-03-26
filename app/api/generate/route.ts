@@ -30,7 +30,6 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY!,
         'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'mcp-client-1.0',
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
