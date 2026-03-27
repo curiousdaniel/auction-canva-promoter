@@ -10,6 +10,49 @@ export const DESIGN_TYPES: { value: string; label: string; dimensions: string }[
   { value: 'facebook_cover',   label: 'Facebook Cover',          dimensions: '820×312 px (wide banner)' },
 ];
 
+/**
+ * Builds the prompt for the Claude call that produces ONLY marketing copy
+ * and a Canva design description (no MCP tools — fast call).
+ */
+export function buildClaudeOnlyPrompt(auction: Auction, items: Item[], designType: string): string {
+  const typeInfo = DESIGN_TYPES.find((d) => d.value === designType);
+  const typeLabel = typeInfo?.label ?? designType;
+  const typeDimensions = typeInfo?.dimensions ?? '';
+
+  const featured = items.filter((i) => i.featured === 1).slice(0, 6);
+  const showcase = (featured.length > 0 ? featured : items.slice(0, 6)).map(
+    (i) => `• ${i.title}${i.starting_bid > 0 ? ` (starting $${i.starting_bid})` : ''}`
+  );
+  const location = [auction.city, auction.state].filter(Boolean).join(', ') || 'Online';
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      });
+    } catch { return iso; }
+  };
+  const dateRange = auction.ends
+    ? `${formatDate(auction.starts)} – ${formatDate(auction.ends)}`
+    : formatDate(auction.starts);
+
+  return `You are an auction marketing copywriter. Return a JSON object with exactly two fields:
+
+1. "copy" — compelling marketing copy for this auction (headline + 2-3 body sentences + call to action)
+2. "design_brief" — a vivid, detailed visual description for an AI design tool to generate a ${typeLabel} (${typeDimensions}) graphic. Describe: layout, colors, fonts, imagery, text elements, and mood. Be specific and visual.
+
+AUCTION:
+- Title: ${auction.title}
+- Dates: ${dateRange}
+- Location: ${location}
+- Items: ${items.length} lots
+- Buyer Premium: ${auction.buyer_premium > 0 ? `${auction.buyer_premium}%` : 'None'}
+
+HIGHLIGHT ITEMS:
+${showcase.join('\n')}
+
+Respond with ONLY valid JSON, no markdown.`;
+}
+
 export function buildDesignPrompt(auction: Auction, items: Item[], designType: string): string {
   const typeInfo = DESIGN_TYPES.find((d) => d.value === designType);
   const typeLabel = typeInfo?.label ?? designType;

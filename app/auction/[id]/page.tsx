@@ -131,7 +131,12 @@ export default function AuctionDetailPage() {
         }),
       });
 
-      const data = await res.json();
+      let data: GenerateResponse & { error?: string; canvaError?: string };
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`Server error (${res.status}): ${res.statusText || 'timeout or unexpected response'}`);
+      }
       if (data.error) throw new Error(data.error);
       setResult(data);
     } catch (e) {
@@ -453,6 +458,11 @@ export default function AuctionDetailPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
                 </a>
+              </div>
+            ) : result.canvaError ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                <p className="font-medium">Canva design failed</p>
+                <p className="mt-2 font-mono text-xs text-amber-700 break-all">{result.canvaError}</p>
               </div>
             ) : result.copy ? (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">

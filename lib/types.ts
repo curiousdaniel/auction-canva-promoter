@@ -51,4 +51,5 @@ export interface CanvaDesignResult {
 export interface GenerateResponse {
   copy: string;
   canvaEditUrl: string | null;
+  canvaError?: string;
 }
