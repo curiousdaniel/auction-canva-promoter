@@ -173,21 +173,34 @@ export async function generateCanvaDesign(
     );
   }
 
+  const first = candidates[0];
+  const candidateId = first.candidate_id ?? first.id;
+
   // Step 2: create design from the first candidate
-  const candidateArg = candidates[0].id ?? candidates[0];
   const { toolResult: createResult } = await callTool(
     accessToken,
     sid2,
     'create-design-from-candidate',
-    { candidate_id: candidateArg }
+    { candidate_id: candidateId }
   );
+
+  // Try to extract a Canva URL from the create result first, then the candidate URL
+  const fromCreate = findEditUrl(createResult);
+  if (fromCreate) return fromCreate;
+  if (first.url) return { edit_url: first.url };
 
   return extractDesignUrls(createResult, genResult);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function extractCandidates(result: unknown): { id?: string }[] {
+interface Candidate {
+  id?: string;
+  candidate_id?: string;
+  url?: string;
+}
+
+function extractCandidates(result: unknown): Candidate[] {
   if (!result || typeof result !== 'object') return [];
   const r = result as Record<string, unknown>;
 
@@ -197,6 +210,15 @@ function extractCandidates(result: unknown): { id?: string }[] {
       if (block.type === 'text' && block.text) {
         try {
           const p = JSON.parse(block.text);
+          // Actual Canva format: { job: { result: { generated_designs: [...] } } }
+          const generated = p?.job?.result?.generated_designs;
+          if (Array.isArray(generated)) {
+            return generated.map((d: { candidate_id?: string; url?: string }) => ({
+              id: d.candidate_id,
+              candidate_id: d.candidate_id,
+              url: d.url,
+            }));
+          }
           if (Array.isArray(p.candidates)) return p.candidates;
           if (Array.isArray(p)) return p;
         } catch { /* try next */ }
@@ -204,9 +226,9 @@ function extractCandidates(result: unknown): { id?: string }[] {
     }
   }
 
-  if (Array.isArray(r.candidates)) return r.candidates as { id?: string }[];
-  if (typeof r.candidate_id === 'string') return [{ id: r.candidate_id }];
-  if (Array.isArray(result)) return result as { id?: string }[];
+  if (Array.isArray(r.candidates)) return r.candidates as Candidate[];
+  if (typeof r.candidate_id === 'string') return [{ id: r.candidate_id, candidate_id: r.candidate_id }];
+  if (Array.isArray(result)) return result as Candidate[];
   if (typeof r.id === 'string') return [{ id: r.id }];
   return [];
 }
