@@ -37,6 +37,7 @@ export default function AuctionDetailPage() {
   const [designType, setDesignType] = useState('instagram_post');
 
   const [generating, setGenerating] = useState(false);
+  const [generatingDesign, setGeneratingDesign] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [copied, setCopied] = useState(false);
@@ -116,33 +117,62 @@ export default function AuctionDetailPage() {
   async function handleGenerate() {
     if (!auction || selectedItems.size === 0) return;
     setGenerating(true);
+    setGeneratingDesign(false);
     setGenerateError(null);
     setResult(null);
 
     try {
       const selectedItemList = items.filter((i) => selectedItems.has(i.id));
-      const res = await fetch('/api/generate', {
+
+      // Step 1: Claude generates copy + design brief (~8s)
+      const copyRes = await fetch('/api/generate/copy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auction,
-          items: selectedItemList,
-          designType,
-        }),
+        body: JSON.stringify({ auction, items: selectedItemList, designType }),
       });
 
-      let data: GenerateResponse & { error?: string; canvaError?: string };
+      let copyData: { copy?: string; designBrief?: string; error?: string };
       try {
-        data = await res.json();
+        copyData = await copyRes.json();
       } catch {
-        throw new Error(`Server error (${res.status}): ${res.statusText || 'timeout or unexpected response'}`);
+        throw new Error(`Server error (${copyRes.status}): timeout or unexpected response`);
       }
-      if (data.error) throw new Error(data.error);
-      setResult(data);
+      if (copyData.error) throw new Error(copyData.error);
+
+      // Show copy immediately
+      setResult({ copy: copyData.copy ?? '', canvaEditUrl: null });
+      setGenerating(false);
+
+      // Step 2: Canva MCP generates the real design (~30s)
+      if (copyData.designBrief) {
+        setGeneratingDesign(true);
+        try {
+          const designRes = await fetch('/api/generate/design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ designBrief: copyData.designBrief }),
+          });
+
+          let designData: { canvaEditUrl?: string; error?: string };
+          try {
+            designData = await designRes.json();
+          } catch {
+            designData = { error: `Design server error (${designRes.status}): timeout or unexpected response` };
+          }
+
+          setResult((prev) => ({
+            copy: prev?.copy ?? '',
+            canvaEditUrl: designData.canvaEditUrl ?? null,
+            canvaError: designData.error,
+          }));
+        } finally {
+          setGeneratingDesign(false);
+        }
+      }
     } catch (e) {
       setGenerateError(e instanceof Error ? e.message : 'Generation failed');
-    } finally {
       setGenerating(false);
+      setGeneratingDesign(false);
     }
   }
 
@@ -369,7 +399,7 @@ export default function AuctionDetailPage() {
 
               <button
                 onClick={handleGenerate}
-                disabled={generating || selectedItems.size === 0}
+                disabled={generating || generatingDesign || selectedItems.size === 0}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 {generating ? (
@@ -378,7 +408,7 @@ export default function AuctionDetailPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
-                    Generating...
+                    Writing copy…
                   </>
                 ) : (
                   'Generate Announcement'
@@ -387,8 +417,17 @@ export default function AuctionDetailPage() {
 
               {generating && (
                 <p className="text-xs text-gray-400 text-center mt-2">
-                  This may take 15–30 seconds
+                  Step 1 of 2 — writing marketing copy (~10 s)
                 </p>
+              )}
+              {generatingDesign && (
+                <div className="mt-3 flex items-center gap-2 text-xs text-purple-600">
+                  <svg className="animate-spin h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Step 2 of 2 — creating Canva design (~30 s)…
+                </div>
               )}
             </div>
 
@@ -440,7 +479,17 @@ export default function AuctionDetailPage() {
             )}
 
             {/* Canva Design */}
-            {result.canvaEditUrl ? (
+            {generatingDesign && (
+              <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 flex items-center gap-3 text-sm text-purple-700">
+                <svg className="animate-spin h-5 w-5 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Creating your Canva design — this takes up to 30 seconds…
+              </div>
+            )}
+
+            {!generatingDesign && result.canvaEditUrl ? (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h4 className="font-semibold text-gray-900 text-sm mb-1">Canva Design Created</h4>
                 <p className="text-xs text-gray-500 mb-4">
@@ -459,12 +508,12 @@ export default function AuctionDetailPage() {
                   </svg>
                 </a>
               </div>
-            ) : result.canvaError ? (
+            ) : !generatingDesign && result.canvaError ? (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
                 <p className="font-medium">Canva design failed</p>
                 <p className="mt-2 font-mono text-xs text-amber-700 break-all">{result.canvaError}</p>
               </div>
-            ) : result.copy ? (
+            ) : !generatingDesign && result.copy ? (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
                 <p className="font-medium">Canva design not created</p>
                 <p className="mt-1 text-amber-700">

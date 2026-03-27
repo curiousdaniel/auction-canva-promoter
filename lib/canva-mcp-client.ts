@@ -1,6 +1,10 @@
 /**
- * Minimal direct client for the Canva MCP server using StreamableHTTP transport.
- * Bypasses Anthropic's MCP orchestration layer to avoid the 60s serverless timeout.
+ * Minimal direct client for the Canva MCP server (StreamableHTTP transport).
+ *
+ * Key design decision: SSE responses are read line-by-line and the fetch is
+ * aborted as soon as the matching JSON-RPC response arrives.  Waiting for
+ * res.text() on a live SSE stream means waiting for the server to close it,
+ * which can take forever — that was the root cause of the 60 s timeout.
  */
 
 const MCP_URL = 'https://mcp.canva.com/mcp';
@@ -9,10 +13,15 @@ interface McpResponse {
   jsonrpc: '2.0';
   id?: number;
   result?: unknown;
-  error?: { code: number; message: string; data?: unknown };
+  error?: { code: number; message: string };
 }
 
-/** Low-level: POST one JSON-RPC message, handle both JSON and SSE responses. */
+/**
+ * POST one JSON-RPC message to the Canva MCP server.
+ * Handles both regular JSON and SSE (text/event-stream) responses.
+ * For SSE, reads line-by-line and aborts the stream the moment the
+ * matching response arrives — avoids blocking until stream close.
+ */
 async function mcpPost(
   token: string,
   sessionId: string | null,
@@ -25,58 +34,72 @@ async function mcpPost(
   };
   if (sessionId) headers['mcp-session-id'] = sessionId;
 
+  const controller = new AbortController();
+
   const res = await fetch(MCP_URL, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal: controller.signal,
   });
 
   const newSessionId = res.headers.get('mcp-session-id') ?? sessionId;
   const contentType = res.headers.get('content-type') ?? '';
-  const text = await res.text();
 
-  if (!res.ok && !contentType.includes('text/event-stream')) {
-    throw new Error(`Canva MCP HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  // StreamableHTTP can respond with SSE
+  // ── SSE stream ────────────────────────────────────────────────────────────
   if (contentType.includes('text/event-stream')) {
-    const reqBody = body as { id?: number };
-    const targetId = reqBody.id;
-    for (const line of text.split('\n')) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (!raw || raw === '[DONE]') continue;
-      let parsed: McpResponse;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      if (targetId === undefined || parsed.id === targetId) {
-        if (parsed.error) {
-          throw new Error(`Canva MCP error: ${parsed.error.message}`);
+    const targetId = (body as { id?: number }).id;
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value, { stream: true });
+        // Process all complete lines
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? ''; // last partial line stays in buf
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === '[DONE]') continue;
+
+          let parsed: McpResponse;
+          try { parsed = JSON.parse(raw); } catch { continue; }
+
+          if (targetId === undefined || parsed.id === targetId) {
+            controller.abort(); // stop reading — we have our answer
+            if (parsed.error) throw new Error(`Canva MCP: ${parsed.error.message}`);
+            return { result: parsed.result, sessionId: newSessionId };
+          }
         }
-        return { result: parsed.result, sessionId: newSessionId };
       }
+    } finally {
+      try { reader.releaseLock(); } catch { /* ignore */ }
     }
-    throw new Error(`No matching response (id=${targetId}) found in SSE stream. Raw: ${text.slice(0, 500)}`);
+
+    throw new Error('No matching response found in SSE stream');
   }
 
-  // Regular JSON response
+  // ── Regular JSON response ─────────────────────────────────────────────────
+  const text = await res.text();
+  controller.abort();
+
+  if (!res.ok) throw new Error(`Canva MCP HTTP ${res.status}: ${text.slice(0, 200)}`);
+
   let parsed: McpResponse;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error(`Canva MCP returned non-JSON: ${text.slice(0, 200)}`);
+  try { parsed = JSON.parse(text); } catch {
+    throw new Error(`Canva MCP non-JSON response: ${text.slice(0, 200)}`);
   }
-  if (parsed.error) {
-    throw new Error(`Canva MCP error: ${parsed.error.message}`);
-  }
+  if (parsed.error) throw new Error(`Canva MCP: ${parsed.error.message}`);
   return { result: parsed.result, sessionId: newSessionId };
 }
 
-/** Opens an MCP session and returns the session ID (may be null for stateless servers). */
+/** Opens a session (initialize + initialized notification). Returns session ID. */
 async function initSession(token: string): Promise<string | null> {
   const { sessionId } = await mcpPost(token, null, {
     jsonrpc: '2.0',
@@ -89,33 +112,31 @@ async function initSession(token: string): Promise<string | null> {
     },
   });
 
-  // Send the required "initialized" notification (fire-and-forget, ignore errors)
+  // Fire-and-forget notification (no id = no response expected)
   try {
     await mcpPost(token, sessionId, {
       jsonrpc: '2.0',
       method: 'notifications/initialized',
     });
-  } catch {
-    // notifications are one-way; ignore response errors
-  }
+  } catch { /* notifications are one-way */ }
 
   return sessionId;
 }
 
-/** Calls a single Canva MCP tool and returns its result. */
+/** Calls a Canva MCP tool and returns its raw result. */
 async function callTool(
   token: string,
   sessionId: string | null,
   toolName: string,
   args: Record<string, unknown>
 ): Promise<{ toolResult: unknown; sessionId: string | null }> {
-  const { result, sessionId: newSid } = await mcpPost(token, sessionId, {
+  const { result, sessionId: sid } = await mcpPost(token, sessionId, {
     jsonrpc: '2.0',
     id: 2,
     method: 'tools/call',
     params: { name: toolName, arguments: args },
   });
-  return { toolResult: result, sessionId: newSid };
+  return { toolResult: result, sessionId: sid };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -128,9 +149,7 @@ export interface CanvaGeneratedDesign {
 }
 
 /**
- * Generates a Canva design from a text description using the MCP server's
- * generate-design and create-design-from-candidate tools.
- *
+ * Runs generate-design → create-design-from-candidate via the Canva MCP server.
  * Returns the direct edit URL for the finished design.
  */
 export async function generateCanvaDesign(
@@ -139,7 +158,7 @@ export async function generateCanvaDesign(
 ): Promise<CanvaGeneratedDesign> {
   const sessionId = await initSession(accessToken);
 
-  // Step 1: generate design candidates
+  // Step 1: generate candidates
   const { toolResult: genResult, sessionId: sid2 } = await callTool(
     accessToken,
     sessionId,
@@ -147,57 +166,48 @@ export async function generateCanvaDesign(
     { query: designPrompt }
   );
 
-  // Extract the first candidate ID from the result.
-  // The result shape is: { content: [{ type:'text', text: JSON }] } or similar.
   const candidates = extractCandidates(genResult);
   if (!candidates.length) {
     throw new Error(
-      `generate-design returned no candidates. Raw result: ${JSON.stringify(genResult).slice(0, 300)}`
+      `generate-design returned no candidates. Raw: ${JSON.stringify(genResult).slice(0, 400)}`
     );
   }
 
-  const firstCandidate = candidates[0];
-
-  // Step 2: create the design from the chosen candidate
+  // Step 2: create design from the first candidate
+  const candidateArg = candidates[0].id ?? candidates[0];
   const { toolResult: createResult } = await callTool(
     accessToken,
     sid2,
     'create-design-from-candidate',
-    { candidate_id: firstCandidate.id ?? firstCandidate }
+    { candidate_id: candidateArg }
   );
 
   return extractDesignUrls(createResult, genResult);
 }
 
-// ─── Helpers for extracting nested data from MCP tool results ─────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function extractCandidates(result: unknown): { id: string }[] {
+function extractCandidates(result: unknown): { id?: string }[] {
   if (!result || typeof result !== 'object') return [];
-
-  // Common shape: { content: [{ type: 'text', text: '{"candidates": [...]}' }] }
   const r = result as Record<string, unknown>;
 
+  // Unwrap MCP text content blocks
   if (Array.isArray(r.content)) {
     for (const block of r.content as { type?: string; text?: string }[]) {
       if (block.type === 'text' && block.text) {
         try {
-          const parsed = JSON.parse(block.text);
-          if (Array.isArray(parsed.candidates)) return parsed.candidates;
-          if (Array.isArray(parsed)) return parsed;
-        } catch {
-          // try next block
-        }
+          const p = JSON.parse(block.text);
+          if (Array.isArray(p.candidates)) return p.candidates;
+          if (Array.isArray(p)) return p;
+        } catch { /* try next */ }
       }
     }
   }
 
-  if (Array.isArray(r.candidates)) return r.candidates as { id: string }[];
+  if (Array.isArray(r.candidates)) return r.candidates as { id?: string }[];
   if (typeof r.candidate_id === 'string') return [{ id: r.candidate_id }];
-
-  // Fallback: if result itself is an array or has an id
-  if (Array.isArray(result)) return result as { id: string }[];
+  if (Array.isArray(result)) return result as { id?: string }[];
   if (typeof r.id === 'string') return [{ id: r.id }];
-
   return [];
 }
 
@@ -206,23 +216,23 @@ function extractDesignUrls(
   fallback: unknown
 ): CanvaGeneratedDesign {
   for (const raw of [createResult, fallback]) {
-    const url = findUrlInResult(raw);
-    if (url) return url;
+    const found = findEditUrl(raw);
+    if (found) return found;
   }
   throw new Error(
-    `Could not extract design URL from result: ${JSON.stringify(createResult).slice(0, 400)}`
+    `Could not find a Canva edit URL. create-design-from-candidate returned: ${JSON.stringify(createResult).slice(0, 400)}`
   );
 }
 
-function findUrlInResult(raw: unknown): CanvaGeneratedDesign | null {
-  if (!raw || typeof raw !== 'object') return null;
-
-  // Recursive search for edit_url
+function findEditUrl(raw: unknown): CanvaGeneratedDesign | null {
+  if (!raw) return null;
   const str = JSON.stringify(raw);
-  const editMatch = str.match(/"edit_url"\s*:\s*"(https:\/\/[^"]+)"/);
-  const viewMatch = str.match(/"view_url"\s*:\s*"(https:\/\/[^"]+)"/);
-  const idMatch   = str.match(/"(?:design_id|id)"\s*:\s*"([^"]+)"/);
+
+  const editMatch  = str.match(/"edit_url"\s*:\s*"(https:\/\/[^"]+)"/);
+  const viewMatch  = str.match(/"view_url"\s*:\s*"(https:\/\/[^"]+)"/);
+  const idMatch    = str.match(/"(?:design_id|id)"\s*:\s*"([^"]{4,})"/);
   const titleMatch = str.match(/"title"\s*:\s*"([^"]+)"/);
+  const urlMatch   = str.match(/https:\/\/www\.canva\.com\/design\/[^\s"\\]+/);
 
   if (editMatch) {
     return {
@@ -232,12 +242,6 @@ function findUrlInResult(raw: unknown): CanvaGeneratedDesign | null {
       title:     titleMatch?.[1],
     };
   }
-
-  // Also check for canva.com URLs in text blocks
-  const urlMatch = str.match(/https:\/\/www\.canva\.com\/design\/[^"\\]+/);
-  if (urlMatch) {
-    return { edit_url: urlMatch[0] };
-  }
-
+  if (urlMatch) return { edit_url: urlMatch[0] };
   return null;
 }
