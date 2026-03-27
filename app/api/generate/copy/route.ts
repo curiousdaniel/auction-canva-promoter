@@ -45,10 +45,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!claudeRes!.ok) {
+    if (!claudeRes || !claudeRes.ok) {
       return Response.json(
         { error: `Anthropic API error (after retries): ${lastErr}` },
-        { status: claudeRes!.status }
+        { status: claudeRes?.status ?? 500 }
       );
     }
 
