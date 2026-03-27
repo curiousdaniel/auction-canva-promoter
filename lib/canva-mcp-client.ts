@@ -112,13 +112,17 @@ async function initSession(token: string): Promise<string | null> {
     },
   });
 
-  // Fire-and-forget notification (no id = no response expected)
-  try {
-    await mcpPost(token, sessionId, {
-      jsonrpc: '2.0',
-      method: 'notifications/initialized',
-    });
-  } catch { /* notifications are one-way */ }
+  // Truly fire-and-forget: do NOT await — this is a one-way notification,
+  // no response is expected and waiting for it wastes 1-3 seconds.
+  fetch(MCP_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+  }).catch(() => { /* ignore */ });
 
   return sessionId;
 }
@@ -174,22 +178,15 @@ export async function generateCanvaDesign(
   }
 
   const first = candidates[0];
-  const candidateId = first.candidate_id ?? first.id;
 
-  // Step 2: create design from the first candidate
-  const { toolResult: createResult } = await callTool(
-    accessToken,
-    sid2,
-    'create-design-from-candidate',
-    { candidate_id: candidateId }
-  );
-
-  // Try to extract a Canva URL from the create result first, then the candidate URL
-  const fromCreate = findEditUrl(createResult);
-  if (fromCreate) return fromCreate;
+  // Use the candidate URL directly — generate-design already returns a usable
+  // Canva link for each candidate. create-design-from-candidate would formally
+  // move it into the user's account but adds another ~8s round-trip and often
+  // pushes us over the 55s function budget. The candidate URL opens fine in Canva.
   if (first.url) return { edit_url: first.url };
 
-  return extractDesignUrls(createResult, genResult);
+  // Fallback: try to find any Canva URL buried in the raw result
+  return extractDesignUrls(genResult, genResult);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
