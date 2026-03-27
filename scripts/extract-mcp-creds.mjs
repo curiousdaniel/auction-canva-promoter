@@ -84,26 +84,36 @@ async function main() {
   const { clientInfo, tokens } = found[0];
 
   const clientId     = clientInfo.client_id;
-  const clientSecret = clientInfo.client_secret;
+  const clientSecret = clientInfo.client_secret ?? null; // may be absent when auth method is "none"
   const refreshToken = tokens.refresh_token;
+  const authMethod   = clientInfo.token_endpoint_auth_method ?? 'client_secret_basic';
 
-  if (!clientId || !clientSecret || !refreshToken) {
+  if (!clientId || !refreshToken) {
     die(
       'Credential files are incomplete. Try re-running:\n' +
         '  npx mcp-remote@latest https://mcp.canva.com/mcp'
     );
   }
 
+  const hasSecret = clientSecret && authMethod !== 'none';
+
   console.log('='.repeat(60));
   console.log('  Canva MCP credentials — paste into Vercel env vars');
   console.log('='.repeat(60));
   console.log();
   console.log(`CANVA_MCP_CLIENT_ID=${clientId}`);
-  console.log(`CANVA_MCP_CLIENT_SECRET=${clientSecret}`);
+  if (hasSecret) {
+    console.log(`CANVA_MCP_CLIENT_SECRET=${clientSecret}`);
+  }
   console.log(`CANVA_MCP_REFRESH_TOKEN=${refreshToken}`);
   console.log();
   console.log('='.repeat(60));
-  console.log('In Vercel → Settings → Environment Variables, add all three.');
+  if (hasSecret) {
+    console.log('In Vercel → Settings → Environment Variables, add all three.');
+  } else {
+    console.log('In Vercel → Settings → Environment Variables, add both values.');
+    console.log('(No client secret — this client uses token_endpoint_auth_method: none)');
+  }
   console.log('Redeploy after adding them.');
 }
 

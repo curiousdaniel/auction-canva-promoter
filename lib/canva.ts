@@ -115,11 +115,10 @@ const KEY_MCP_REFRESH = 'canva_mcp_refresh_token';
  * Rotates the refresh token in Redis after each successful exchange.
  */
 export async function getCanvaMcpAccessToken(): Promise<string> {
-  const clientId     = process.env.CANVA_MCP_CLIENT_ID;
-  const clientSecret = process.env.CANVA_MCP_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
+  const clientId = process.env.CANVA_MCP_CLIENT_ID;
+  if (!clientId) {
     throw new Error(
-      'CANVA_MCP_CLIENT_ID and CANVA_MCP_CLIENT_SECRET are not set. ' +
+      'CANVA_MCP_CLIENT_ID is not set. ' +
         'Run scripts/extract-mcp-creds.mjs and add the values to Vercel.'
     );
   }
@@ -135,17 +134,30 @@ export async function getCanvaMcpAccessToken(): Promise<string> {
     );
   }
 
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  // mcp-remote may register clients with token_endpoint_auth_method "none" (no secret).
+  // In that case we include client_id in the body instead of Basic auth.
+  const clientSecret = process.env.CANVA_MCP_CLIENT_SECRET ?? null;
+
+  const body: Record<string, string> = {
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  };
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
+  if (clientSecret) {
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    headers['Authorization'] = `Basic ${credentials}`;
+  } else {
+    body['client_id'] = clientId;
+  }
+
   const res = await fetch(MCP_TOKEN_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${credentials}`,
-    },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-    }),
+    headers,
+    body: new URLSearchParams(body),
   });
 
   if (!res.ok) {
