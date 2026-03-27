@@ -19,24 +19,36 @@ export async function POST(request: NextRequest) {
 
     const prompt = buildClaudeOnlyPrompt(auction, items, designType);
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY!,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    // Retry up to 3 times on transient overload (529) or rate-limit (529/529) errors
+    let claudeRes: Response | null = null;
+    let lastErr = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 2000 * attempt));
+      claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY!,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (claudeRes.ok) break;
+      lastErr = await claudeRes.text();
+      // Only retry on overload / server errors, not auth or bad-request errors
+      if (claudeRes.status < 500 && claudeRes.status !== 429) {
+        return Response.json({ error: `Anthropic API error: ${lastErr}` }, { status: claudeRes.status });
+      }
+    }
 
-    if (!claudeRes.ok) {
+    if (!claudeRes!.ok) {
       return Response.json(
-        { error: `Anthropic API error: ${await claudeRes.text()}` },
-        { status: claudeRes.status }
+        { error: `Anthropic API error (after retries): ${lastErr}` },
+        { status: claudeRes!.status }
       );
     }
 
