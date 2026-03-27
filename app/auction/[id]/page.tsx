@@ -150,7 +150,11 @@ export default function AuctionDetailPage() {
           const designRes = await fetch('/api/generate/design', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ designBrief: copyData.designBrief }),
+            body: JSON.stringify({
+              designBrief: copyData.designBrief,
+              designType,
+              designTitle: auction?.title,
+            }),
           });
 
           let designData: { canvaEditUrl?: string; error?: string };

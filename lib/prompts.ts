@@ -5,9 +5,9 @@ export const DESIGN_TYPES: { value: string; label: string; dimensions: string }[
   { value: 'facebook_post',    label: 'Facebook Post',           dimensions: '1200×628 px (landscape)' },
   { value: 'twitter_post',     label: 'Twitter/X Post',          dimensions: '1600×900 px (landscape)' },
   { value: 'your_story',       label: 'Instagram/Facebook Story',dimensions: '1080×1920 px (vertical)' },
-  { value: 'flyer',            label: 'Flyer',                   dimensions: 'US Letter (portrait)' },
-  { value: 'poster',           label: 'Poster',                  dimensions: 'A3 (portrait)' },
-  { value: 'facebook_cover',   label: 'Facebook Cover',          dimensions: '820×312 px (wide banner)' },
+  { value: 'flyer',            label: 'Flyer',                   dimensions: 'US Letter portrait — blank canvas' },
+  { value: 'poster',           label: 'Poster',                  dimensions: 'A3 portrait — blank canvas' },
+  { value: 'facebook_cover',   label: 'Facebook Cover',          dimensions: '820×312 px — blank canvas' },
 ];
 
 /**
